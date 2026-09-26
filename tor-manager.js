@@ -33,6 +33,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const net = require('net');
+const platform = require('./platform');
 
 // ============================================================
 // Ports, paths and budgets
@@ -359,10 +360,10 @@ function record(line, onLog) {
 function binPaths() {
     const root = require('./core-paths').dir('tor', require('./core-paths').bundled('core', 'tor'));
     return {
-        tor: path.join(root, 'tor.exe'),
-        pt: path.join(root, 'pluggable_transports', 'lyrebird.exe'),
+        tor: path.join(root, platform.exe('tor')),
+        pt: path.join(root, 'pluggable_transports', platform.exe('lyrebird')),
         // Conjure is its OWN executable, not one of lyrebird's methods — see [ptBinFor].
-        conjure: path.join(root, 'pluggable_transports', 'conjure-client.exe'),
+        conjure: path.join(root, 'pluggable_transports', platform.exe('conjure-client')),
         ptConfig: path.join(root, 'pluggable_transports', 'pt_config.json'),
         geoip: path.join(root, 'data', 'geoip'),
         geoip6: path.join(root, 'data', 'geoip6'),

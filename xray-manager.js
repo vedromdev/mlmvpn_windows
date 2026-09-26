@@ -10,6 +10,7 @@ const path = require('path');
 const { generateMixedCaseSNI } = require('./anti-dpi');
 const dedicatedDns = require('./dedicated-dns-manager');
 const tlsFingerprint = require('./tls-fingerprint');
+const platform = require('./platform');
 
 let xrayProcess = null;
 let currentConfigUri = null;
@@ -53,7 +54,7 @@ function startTrafficPolling(onLog) {
     // Monitoring off: no `xray api statsquery` process every second, no disk write.
     if (!trafficMgr.isEnabled()) return;
     const exeDir = getUnpackedDir();
-    const xrayExe = corePaths.file('xray', 'xray.exe', path.join(exeDir, 'core', 'xray.exe'));
+    const xrayExe = corePaths.file('xray', platform.exe('xray'), path.join(exeDir, 'core', platform.exe('xray')));
     
     trafficMgr.startSession();
     let lastUp = 0;
@@ -1114,12 +1115,10 @@ async function killXrayProcess() {
     // left holding the SOCKS port by a previous run of the app, and clearing it is exactly
     // what makes the next start able to bind.
     const proc = xrayProcess;
-    const args = proc && proc.pid
-        ? ['/F', '/PID', String(proc.pid), '/T']
-        : ['/F', '/IM', 'xray.exe', '/T'];
-    await new Promise((resolve) => {
-        execFile('taskkill', args, { windowsHide: true, timeout: 8000 }, () => resolve());
-    });
+    // platform.kill: `taskkill /F /PID n /T` on Windows, `kill -9 n` on macOS; the no-handle
+    // fallback image kill (`taskkill /F /IM xray.exe /T` | `pkill -9 -x xray`) clears an orphan
+    // still holding the SOCKS port from a previous run.
+    await platform.kill({ pid: proc && proc.pid ? proc.pid : 0, engine: 'xray' });
     stopTrafficPolling();
     xrayProcess = null;
     activePorts = null;
@@ -1299,7 +1298,7 @@ function stopXray() {
     } catch (e) { /* must never prevent Xray from being stopped */ }
 
     try {
-        execSync(`taskkill /F /IM xray.exe /T`, { stdio: 'ignore' });
+        platform.killSync({ engine: 'xray' });
     } catch(e) {}
 
     stopTrafficPolling();
@@ -1327,7 +1326,7 @@ async function stopXrayAsync() {
         // said nothing about WHOSE tunnel it is, so disconnecting a V2Ray node while a WARP
         // engine held the adapter tore down the WARP tunnel as well — a feature the user was
         // not touching, taken offline by a click in another panel.
-        if (tun.isRunning() && tun.currentEngine() === 'xray.exe') {
+        if (tun.isRunning() && platform.processName(tun.currentEngine()) === 'xray') {
             await tun.stopTunAsync(() => {});
             // AND CHECK THAT IT REALLY WENT.
             //
@@ -1369,9 +1368,7 @@ async function stopBatchXray() {
     const proc = batchProcess;
     batchProcess = null;
     if (!proc || proc.killed) return;
-    await new Promise((resolve) => {
-        execFile('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true, timeout: 8000 }, () => resolve());
-    });
+    await platform.kill({ pid: proc.pid, engine: 'xray' });
 }
 
 async function startBatchXray(baseConfigUri, ips) {

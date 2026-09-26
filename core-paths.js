@@ -7,8 +7,9 @@
 //   * the INSTALLED build keeps core/ under app.asar.unpacked in Program Files, which an upgrade
 //     wipes — and a half-replaced executable there is a broken engine with nothing to roll back to.
 //
-// So every store install is its own directory — %ProgramData%\MLM VPN\store\cores\<id>\<version>\ —
-// and this file decides, per start, whether an engine runs from there or from core/. A running
+// So every store install is its own directory — %ProgramData%\MLM VPN\store\cores\<id>\<version>\
+// on Windows, /Library/Application Support/MLM VPN/store/cores/<id>/<version>/ on macOS — and this
+// file decides, per start, whether an engine runs from there or from core/. A running
 // engine is never touched: the new version is picked up the next time that engine starts, and the
 // old directory stays until nothing needs it.
 //
@@ -38,8 +39,10 @@ const versions = require('./store/versions');
 
 function storeRoot() {
     if (process.env.MLMVPN_STORE_ROOT) return path.resolve(process.env.MLMVPN_STORE_ROOT);
-    const programData = process.env.ProgramData || process.env.ALLUSERSPROFILE || 'C:\\ProgramData';
-    return path.join(programData, 'MLM VPN', 'store');
+    // The machine-wide location, which differs per platform — and lives in platform.js so that the
+    // Windows path (%ProgramData%\MLM VPN) stays exactly what it always was. On macOS this is
+    // /Library/Application Support/MLM VPN, the documented home for administrator-managed data.
+    return path.join(require('./platform').supportDir(), 'store');
 }
 
 const activeFile = () => path.join(storeRoot(), 'active.json');
@@ -112,6 +115,9 @@ function activeInstall(id) {
  *
  * Use this instead of building the path by hand. The test in tests/aether/packaging.test.js
  * fails the build if a manager goes back to a raw `__dirname`.
+ *
+ * On macOS there is no asar-unpack problem — Electron can exec a file inside app.asar on Darwin —
+ * but the `unpacked` rewrite is harmless there and keeps one code path for both platforms.
  */
 function bundled(...segments) {
     // Idempotent on purpose: rewriting an already-unpacked path would give .asar.unpacked.unpacked.
@@ -121,16 +127,43 @@ function bundled(...segments) {
     return path.join(root, ...segments);
 }
 
+/**
+ * The name this file has on THIS platform.
+ *
+ * Every manager was written against Windows and asks for `xray.exe`, `sing-box.exe`, `tor.exe`.
+ * On macOS those binaries exist without the extension, and adding a platform branch at a hundred
+ * call sites would be a hundred chances to get one wrong. So the translation happens here, once:
+ * a `.exe` name becomes the extensionless name off Windows. On Windows it is the identity
+ * function, so nothing about the Windows build changes.
+ */
+function nativeRel(rel) {
+    if (process.platform === 'win32') return rel;
+    return String(rel).replace(/\.exe$/i, '');
+}
+
+/** The same translation for a full path — and, for a bundled path, pick whichever form exists. */
+function nativePath(p) {
+    if (process.platform === 'win32' || !p) return p;
+    const switched = String(p).replace(/\.exe$/i, '');
+    if (switched === p) return p;
+    try {
+        if (fs.existsSync(p)) return p;
+        if (fs.existsSync(switched)) return switched;
+    } catch (e) { /* fall through to the platform name */ }
+    return switched;
+}
+
 /** Directory holding `id`'s files: the active store install, else `bundledDir`. */
 function dir(id, bundledDir) {
     const a = activeInstall(id);
-    return a ? path.resolve(a.dir) : bundledDir;
+    return a ? path.resolve(a.dir) : nativePath(bundledDir);
 }
 
 /** One file of `id`: from the active store install when it carries that file, else `bundledPath`. */
 function file(id, rel, bundledPath) {
+    const key = nativeRel(rel);
     const a = activeInstall(id);
-    return a && a.files[rel] ? path.join(path.resolve(a.dir), rel) : bundledPath;
+    return a && a.files[key] ? path.join(path.resolve(a.dir), key) : nativePath(bundledPath);
 }
 
 /**
@@ -144,11 +177,12 @@ function candidates(id, rel, bundledPath) {
     const out = [];
     const add = (p) => { if (p && out.indexOf(p) < 0) out.push(p); };
     const a = activeInstall(id);
-    if (a && a.files[rel]) add(path.join(path.resolve(a.dir), rel));
+    const key = nativeRel(rel);
+    if (a && a.files[key]) add(path.join(path.resolve(a.dir), key));
     if (a && a.previous && a.previous.dir && insideStore(id, a.previous.dir)) {
-        add(path.join(path.resolve(a.previous.dir), rel));
+        add(path.join(path.resolve(a.previous.dir), key));
     }
-    add(bundledPath);
+    add(nativePath(bundledPath));
     return out;
 }
 
@@ -158,4 +192,4 @@ function activeVersion(id) {
     return a ? a.version : null;
 }
 
-module.exports = { storeRoot, activeFile, readActive, activeInstall, bundled, dir, file, candidates, activeVersion };
+module.exports = { storeRoot, activeFile, readActive, activeInstall, bundled, dir, file, candidates, activeVersion, nativeRel, nativePath };

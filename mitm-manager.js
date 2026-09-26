@@ -37,6 +37,7 @@ const KEY_PLACEHOLDER = '__MLM_KEY_PATH__';
 function unpackedDir() {
     return __dirname.toLowerCase().includes('.asar') ? __dirname.replace(/\.asar/gi, '.asar.unpacked') : __dirname;
 }
+const platform = require('./platform');
 const xrayExe = () => require('./core-paths').file('xray', 'xray.exe', path.join(unpackedDir(), 'core', 'xray.exe'));
 /**
  * The config to run: the store's copy when one is installed, else the one that shipped.
@@ -108,6 +109,11 @@ async function ensure() {
 /** Does Windows trust this certificate right now? Asked live, never remembered. */
 async function isTrusted(info = certInfo()) {
     if (!info) return false;
+    if (platform.isMac) {
+        // macOS: is our CA in a keychain the system trusts? Asked of `security` every time.
+        const r = await platform.run('security', ['find-certificate', '-c', info.cn, '/Library/Keychains/System.keychain']);
+        return r.ok;
+    }
     // The current user's Root store as PowerShell sees it includes the machine's, so one
     // lookup covers a certificate installed either way. (certutil's exit codes for -store
     // are not usable here: a missing thumbprint returns 0.)
@@ -122,7 +128,10 @@ async function isTrusted(info = certInfo()) {
 async function trust() {
     const info = await ensure();
     if (await isTrusted(info)) return { trusted: true };
-    await run('certutil.exe', ['-user', '-addstore', 'Root', CERT], 10 * 60 * 1000);
+    // certutil on Windows; `security add-trusted-cert` into the System keychain on macOS, which
+    // needs root. Declining the OS prompt is a normal outcome, not an error — isTrusted() is what
+    // decides either way.
+    await platform.cert.trust(CERT);
     const trusted = await isTrusted(info);
     return { trusted, declined: !trusted };
 }
@@ -131,6 +140,10 @@ async function trust() {
 async function untrust() {
     const info = certInfo();
     if (!info) return { trusted: false };
+    if (platform.isMac) {
+        await platform.cert.untrust(CERT);
+        return { trusted: await isTrusted(info) };
+    }
     const inMachine = /True/i.test((await ps(`Test-Path 'Cert:\\LocalMachine\\Root\\${info.thumbprint}'`)).out);
     await run('certutil.exe', ['-user', '-delstore', 'Root', info.thumbprint], 10 * 60 * 1000);
     if (inMachine) await run('certutil.exe', ['-delstore', 'Root', info.thumbprint], 60000);

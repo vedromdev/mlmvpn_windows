@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for MLM VPN on macOS (Apple Silicon).
+
+  The app is not sandboxed (a VPN client that changes system DNS, the system proxy, routes and the
+  firewall cannot be). What it needs from the hardened runtime is:
+
+    - cs.allow-jit / cs.allow-unsigned-executable-memory  Electron's V8 needs these under the
+      hardened runtime or the renderer cannot start.
+    - cs.disable-library-validation  Every engine this app runs (Xray, sing-box, Tor, Aether, …) is
+      a separately signed third-party binary, and notarization refuses to load a differently-signed
+      library without this.
+    - network.client / network.server  The engines listen on loopback and dial out; the app itself
+      serves its UI on localhost.
+
+  Code signing and notarization still need a Developer ID Application certificate, which is a
+  separate, later step — see docs/MACOS-PORT.md.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+</dict>
+</plist>

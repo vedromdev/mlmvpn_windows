@@ -39,6 +39,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const net = require('net');
+const platform = require('./platform');
 
 const FILE = path.join(os.homedir(), '.mlmvpn', 'network-settings.json');
 
@@ -209,10 +210,12 @@ function listenHost() { return get().allowLan ? '0.0.0.0' : '127.0.0.1'; }
  */
 function engineOf(processName, method) {
     if (method && MTU_METHODS.includes(method)) return method;
-    const p = String(processName || '').toLowerCase();
-    if (p === 'xray.exe') return 'v2ray';
-    if (p === 'aether.exe') return 'masque';
-    if (p === 'gst.exe') return 'gst';
+    // platform.processName strips `.exe` on any platform, so the running engine's bare name
+    // ('xray') matches whether it arrived as 'xray.exe' (Windows) or 'xray' (macOS).
+    const p = platform.processName(processName);
+    if (p === 'xray') return 'v2ray';
+    if (p === 'aether') return 'masque';
+    if (p === 'gst') return 'gst';
     return null;
 }
 
@@ -264,8 +267,8 @@ function lanAddresses() {
 async function probeLineMtu({ host = '1.1.1.1' } = {}) {
     const { execFile } = require('child_process');
     const once = (size) => new Promise((resolve) => {
-        execFile('ping', ['-n', '1', '-w', '1500', '-f', '-l', String(size), host], { windowsHide: true, timeout: 6000 }, (err, out) => {
-            resolve(!err && /TTL=/i.test(String(out || '')));
+        execFile('ping', platform.pingArgs(size, host), { windowsHide: true, timeout: 6000 }, (err, out) => {
+            resolve(!err && platform.pingCarried(out));
         });
     });
     let probes = 0;

@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
+const platform = require('./platform');
 
 const FILE = path.join(os.homedir(), '.mlmvpn', 'system-settings.json');
 const TASK = 'MLM VPN (Always-On)';
@@ -56,19 +57,24 @@ function launcherPath() {
     return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
 }
 
+// Windows: a logon scheduled task (`schtasks`). macOS: a LaunchAgent in ~/Library/LaunchAgents
+// plus `launchctl load -w`. platform.service owns which, and reads the answer back from the OS.
 async function taskExists() {
-    return (await run('schtasks.exe', ['/Query', '/TN', TASK])).code === 0;
+    return platform.service.exists();
 }
 
 async function setAlwaysOn(on) {
     const cur = get();
     if (on) {
         const exe = launcherPath();
-        if (/[\\/]node\.exe$/i.test(exe)) throw new Error('فقط در برنامه‌ی نصب‌شده کار می‌کند.');
-        const r = await run('schtasks.exe', ['/Create', '/TN', TASK, '/TR', `"${exe}"`, '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/F']);
-        if (r.code !== 0 || !(await taskExists())) throw new Error('ویندوز اجازه‌ی ساختن کار زمان‌بندی‌شده را نداد: ' + r.out.trim().split('\n').pop());
+        // A bare Node process is the development case; only a packaged app can start at login.
+        if (/[\\/]node(\.exe)?$/i.test(exe)) throw new Error('فقط در برنامه‌ی نصب‌شده کار می‌کند.');
+        const r = await platform.service.install(exe);
+        if (!r.ok || !(await taskExists())) {
+            throw new Error('ساخت ورودی اجرای خودکار در زمان ورود ممکن نشد: ' + String(r.reason || '').trim().split('\n').pop());
+        }
     } else if (await taskExists()) {
-        await run('schtasks.exe', ['/Delete', '/TN', TASK, '/F']);
+        await platform.service.remove();
     }
     return save(Object.assign(cur, { alwaysOn: !!on }));
 }

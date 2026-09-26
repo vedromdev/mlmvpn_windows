@@ -16,6 +16,7 @@ const net = require('net');
 const http = require('http');
 const crypto = require('crypto');
 const { resolveRoutes } = require('./tun-routes');
+const platform = require('./platform');
 
 // Same /30 that most sing-box setups use. It must not collide with the user's LAN; RFC1918
 // space in 172.19 is far less common in home routers than 192.168.x or 10.x.
@@ -219,8 +220,11 @@ const ENGINE_API_SUFFIXES = ['cloudflareclient.com'];
  */
 function processNames(value, fallback) {
     const raw = value === undefined || value === null ? fallback : value;
+    // Windows matches these with the `.exe` (`aether.exe`); every other platform matches the bare
+    // name (`aether`). platform.processName applies the rule, and on Windows is a no-op for the
+    // lower-casing the callers already rely on.
     const list = (Array.isArray(raw) ? raw : [raw])
-        .map(n => String(n || '').trim().toLowerCase())
+        .map(n => (platform.isWindows ? String(n || '').trim().toLowerCase() : platform.processName(n)))
         .filter(Boolean);
     return list.length ? Array.from(new Set(list)) : [String(fallback).toLowerCase()];
 }
@@ -279,8 +283,10 @@ function binPaths() {
     // app, because that is where this module writes it.
     const bin = require('./core-paths').dir('singbox', dir);
     return {
-        exe: path.join(bin, 'sing-box.exe'),
-        wintun: path.join(bin, 'wintun.dll'),
+        exe: path.join(bin, platform.exe('sing-box')),
+        // The TUN adapter driver. Windows needs wintun.dll beside sing-box; macOS has the utun
+        // interface in the kernel and sing-box drives it directly, so there is no file to find.
+        wintun: platform.isWindows ? path.join(bin, 'wintun.dll') : null,
         config: path.join(dir, 'tun-config.json'),
     };
 }
@@ -290,13 +296,18 @@ function binPaths() {
 function checkPrerequisites() {
     const { exe, wintun } = binPaths();
     const missing = [];
-    if (!fs.existsSync(exe)) missing.push('sing-box.exe');
-    if (!fs.existsSync(wintun)) missing.push('wintun.dll');
+    if (!fs.existsSync(exe)) missing.push(platform.exe('sing-box'));
+    if (platform.isWindows && !fs.existsSync(wintun)) missing.push('wintun.dll');
     if (missing.length) {
         throw new Error(
             `برای حالت تونل این فایل‌ها لازم است و در پوشه core پیدا نشدند: ${missing.join(' و ')}. ` +
-            'آن‌ها را در کنار xray.exe قرار دهید.'
+            `آن‌ها را در کنار ${platform.exe('xray')} قرار دهید.`
         );
+    }
+    // The macOS TUN needs the utun interface and the routing table, both root-only. Saying so here
+    // gives a clear message instead of sing-box's own permission error a second later.
+    if (platform.isMac && !platform.isElevated()) {
+        throw new Error('حالت تونل در مک به دسترسی روت نیاز دارد (sudo).');
     }
 }
 

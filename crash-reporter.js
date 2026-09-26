@@ -100,7 +100,8 @@ function reveal() {
             return true;
         } catch (e) { /* fall through */ }
     }
-    require('child_process').spawn('explorer.exe', newest ? ['/select,', newest.file] : [DIR], { detached: true, stdio: 'ignore' }).unref();
+    // platform.reveal: explorer /select, on Windows, `open -R` on macOS, xdg-open elsewhere.
+    require('./platform').reveal(newest ? newest.file : DIR);
     return true;
 }
 

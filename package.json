@@ -9,7 +9,7 @@
     "electron": "electron .",
     "test:store": "node tests/store/run.js",
     "test:fronts": "node tests/fronts/run.js",
-    "test": "node tests/store/run.js && node tests/fronts/run.js && node tests/gst/run.js && node tests/aether/run.js && node tests/github-tunnel/run.js && node tests/netdiag/run.js && node tests/game/run.js && node tests/v2ray/run.js && node tests/gateway/run.js && node tests/openvpn/run.js && node tests/traffic/feed.test.js",
+    "test": "node tests/store/run.js && node tests/fronts/run.js && node tests/gst/run.js && node tests/aether/run.js && node tests/github-tunnel/run.js && node tests/netdiag/run.js && node tests/game/run.js && node tests/v2ray/run.js && node tests/gateway/run.js && node tests/openvpn/run.js && node tests/traffic/feed.test.js && node tests/platform/run.js",
     "test:gst": "node tests/gst/run.js",
     "test:traffic": "node tests/traffic/feed.test.js",
     "test:aether": "node tests/aether/run.js",
@@ -17,10 +17,13 @@
     "test:netdiag": "node tests/netdiag/run.js",
     "validate:netdiag": "node tests/netdiag/validate.js",
     "build": "electron-builder --win",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
     "test:game": "node tests/game/run.js",
     "test:v2ray": "node tests/v2ray/run.js",
     "test:gateway": "node tests/gateway/run.js",
-    "test:openvpn": "node tests/openvpn/run.js"
+    "test:openvpn": "node tests/openvpn/run.js",
+    "test:platform": "node tests/platform/run.js"
   },
   "build": {
     "appId": "com.mlmvpn.scanner",
@@ -66,6 +69,28 @@
       "requestedExecutionLevel": "requireAdministrator",
       "icon": "public/icon.ico"
     },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "icon": "public/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist"
+    },
     "nsis": {
       "artifactName": "${name}-Setup-${version}-${arch}.${ext}",
       "installerIcon": "public/icon.ico",
@@ -104,6 +129,7 @@
       "store-manager.js",
       "iran-profiles-gen.js",
       "core-paths.js",
+      "platform.js",
       "spawn-guard.js",
       "store/**/*",
       "crash-reporter.js",
